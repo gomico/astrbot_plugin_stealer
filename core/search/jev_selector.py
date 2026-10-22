@@ -2,13 +2,35 @@
 
 import asyncio
 import json
+import os
 import time
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import proxy_bypass
 
 import aiohttp
 from astrbot.api import logger
 
 from .search_features import parse_tags
+
+
+def _env_proxy(url: str) -> str | None:
+    """读取 AstrBot WebUI 注入进程环境的 http(s)_proxy，并尊重 no_proxy。
+
+    aiohttp 的 ClientSession 默认 trust_env=False（与 requests 相反），
+    不会读取 http_proxy/https_proxy，必须显式传入 proxy。
+    """
+    try:
+        host = urlparse(url).hostname or ""
+        if host and proxy_bypass(host):
+            return None
+        for key in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"):
+            value = os.environ.get(key)
+            if value:
+                return value
+    except Exception:
+        pass
+    return None
 
 
 class JevSelectionError(Exception):
@@ -176,6 +198,7 @@ class JevSelector:
                 async with session.post(
                     self.api_url(self.plugin.plugin_config),
                     json=body,
+                    proxy=_env_proxy(self.api_url(self.plugin.plugin_config)),
                     headers={
                         "Authorization": f"Bearer {self.plugin.plugin_config.typesafe_api_key.strip()}"
                     },
